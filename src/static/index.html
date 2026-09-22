@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NopeList</title>
+<style>
+  :root {
+    --bg: #0e1014; --panel: #171a21; --panel2: #1e222b; --line: #2b3040;
+    --text: #e7e9ee; --muted: #9aa2b1; --accent: #7c5cff;
+    --red: #ff5f56; --yellow: #ffbd2e; --green: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header { padding: 20px 24px 8px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { padding: 16px 24px 48px; max-width: 1240px; }
+  .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); padding: 4px; font-weight: 600; }
+  td { padding: 2px; vertical-align: middle; }
+  input[type=text], textarea, select {
+    width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit;
+  }
+  textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:disabled { opacity: .55; cursor: not-allowed; }
+  button.mini { padding: 2px 8px; color: var(--muted); }
+  .row-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .opt { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .banner { display: none; margin: 14px 0; padding: 10px 12px; border-radius: 8px;
+    background: #3a1418; border: 1px solid var(--red); color: #ffd4d1; white-space: pre-wrap; }
+  .ok { color: var(--green); }
+  #summary { margin: 18px 0 10px; color: var(--muted); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .card.EVACUATE { border-left-color: var(--red); }
+  .card.AWKWARD { border-left-color: var(--yellow); }
+  .card.CLEAR { border-left-color: var(--green); }
+  .card h3 { margin: 0 0 2px; font-size: 16px; }
+  .card .meta { color: var(--muted); font-size: 12px; }
+  .card a { color: var(--muted); }
+  .hit { margin-top: 8px; padding: 8px 10px; background: var(--panel2); border-radius: 6px; }
+  .hit .who { font-weight: 600; }
+  .hit .tag { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .hit .reason { color: #ffb4ae; font-style: italic; margin-top: 2px; }
+  .safe { margin-top: 6px; color: var(--green); }
+  .excuse { background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin: 14px 0; }
+  .excuse p { white-space: pre-wrap; margin: 6px 0 10px; }
+  details { margin-top: 12px; color: var(--muted); }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; overflow: auto; font-size: 12px; color: var(--text); }
+  .empty { color: var(--muted); padding: 6px 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚫 NopeList — your personal event bouncer</h1>
+  <p>Scan the guest lists of your Luma events against your private blacklist.</p>
+</header>
+
+<main>
+  <div id="banner" class="banner"></div>
+
+  <div class="cols">
+    <section class="panel">
+      <h2>Blacklist (the brain)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th><th>Aliases</th><th>@instagram</th><th>@x</th>
+            <th>Reason</th><th>Threat</th><th>Safe</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="people"></tbody>
+      </table>
+      <div class="row-actions">
+        <button id="addRow">+ Add row</button>
+        <button id="save" class="primary">Save blacklist</button>
+        <span id="saveMsg" class="ok"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Events</h2>
+      <textarea id="urls" placeholder="https://lu.ma/your-event&#10;one URL per line"></textarea>
+      <label class="opt"><input type="checkbox" id="useMcp" /> Discover via Luma MCP (if logged in)</label>
+      <label class="opt"><input type="checkbox" id="dryRun" checked /> Dry run (offline demo)</label>
+      <div class="row-actions">
+        <button id="scan" class="primary">Scan events</button>
+        <span id="scanMsg"></span>
+      </div>
+    </section>
+  </div>
+
+  <div id="summary"></div>
+  <div id="results"></div>
+  <div id="excuse"></div>
+  <div id="raw"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const EMOJI = { CLEAR: "🟢", AWKWARD: "🟡", EVACUATE: "🔴" };
+
+function showError(msg) {
+  const b = $("banner");
+  b.textContent = msg;
+  b.style.display = msg ? "block" : "none";
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let body = null;
+  try { body = await res.json(); } catch (e) { /* non-JSON */ }
+  if (!res.ok) throw new Error((body && body.detail) || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+/* ---------------- blacklist table ---------------- */
+function addPersonRow(p) {
+  p = p || { name: "", aliases: [], instagram: "", x_handle: "", reason: "", threat_weight: 2, safe: false };
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input type="text" class="f-name" value="${esc(p.name)}"></td>
+    <td><input type="text" class="f-aliases" value="${esc((p.aliases || []).join(', '))}" placeholder="comma, separated"></td>
+    <td><input type="text" class="f-ig" value="${esc(p.instagram || '')}"></td>
+    <td><input type="text" class="f-x" value="${esc(p.x_handle || '')}"></td>
+    <td><input type="text" class="f-reason" value="${esc(p.reason)}"></td>
+    <td><select class="f-weight">
+      <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+    </select></td>
+    <td style="text-align:center"><input type="checkbox" class="f-safe"></td>
+    <td><button class="mini f-del" title="delete">✕</button></td>`;
+  tr.querySelector(".f-weight").value = String(p.threat_weight || 2);
+  tr.querySelector(".f-safe").checked = !!p.safe;
+  tr.querySelector(".f-del").onclick = () => tr.remove();
+  $("people").appendChild(tr);
+}
+
+function collectPeople() {
+  return [...$("people").querySelectorAll("tr")].map((tr) => ({
+    name: tr.querySelector(".f-name").value.trim(),
+    aliases: tr.querySelector(".f-aliases").value.split(",").map((s) => s.trim()).filter(Boolean),
+    instagram: tr.querySelector(".f-ig").value.trim(),
+    x_handle: tr.querySelector(".f-x").value.trim(),
+    reason: tr.querySelector(".f-reason").value.trim(),
+    threat_weight: parseInt(tr.querySelector(".f-weight").value, 10),
+    safe: tr.querySelector(".f-safe").checked,
+  })).filter((p) => p.name);
+}
+
+/* ---------------- results ---------------- */
+function hitHtml(h, safe) {
+  const handle = h.handle ? `@${esc(h.handle)}` : "(no handle)";
+  const pct = Math.round((h.confidence || 0) * 100);
+  if (safe) {
+    return `<div class="safe">☕ ${esc(h.guest_name)} ${handle} is going — “${esc(h.reason)}”</div>`;
+  }
+  return `<div class="hit">
+      <div><span class="who">${esc(h.guest_name)}</span> <span class="tag">${handle}</span>
+        <span class="tag">→ ${esc(h.person_name)} · ${pct}% via ${esc(h.matched_on)} · threat ${h.threat_weight}</span></div>
+      <div class="reason">“${esc(h.reason)}”</div>
+    </div>`;
+}
+
+function render(data) {
+  const s = data.summary;
+  $("summary").textContent =
+    `${s.events_scanned} event(s) scanned · ${s.events_with_hits} with hits · ` +
+    `${s.events_to_evacuate} to evacuate · ${s.friendly_faces} friendly face(s)` +
+    (s.dry_run ? " · dry run" : "");
+
+  $("results").innerHTML = data.events.map((e) => {
+    const of = e.guest_count != null ? ` of ${e.guest_count}` : "";
+    const cached = e.from_cache ? " · cached" : "";
+    const body = (e.hits.map((h) => hitHtml(h, false)).join("") +
+                  e.safe_hits.map((h) => hitHtml(h, true)).join("")) ||
+                 `<div class="safe">nobody on your list. go forth.</div>`;
+    return `<div class="card ${esc(e.threat_level)}">
+      <h3>${EMOJI[e.threat_level] || ""} ${esc(e.threat_level)} — ${esc(e.title)}</h3>
+      <div class="meta"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url)}</a></div>
+      <div class="meta">${e.guests_read}${of} guests read${cached} · threat score ${e.threat_score}</div>
+      ${body}
+    </div>`;
+  }).join("");
+
+  if (data.excuse) {
+    $("excuse").innerHTML = `<div class="excuse">
+      <h2 style="margin:0;font-size:14px">📱 Excuse draft — ${esc(data.excuse.event_title)}</h2>
+      <p id="excuseText">${esc(data.excuse.text)}</p>
+      <button id="copyExcuse">Copy</button> <span id="copyMsg" class="ok"></span>
+    </div>`;
+    $("copyExcuse").onclick = async () => {
+      try { await navigator.clipboard.writeText(data.excuse.text); $("copyMsg").textContent = "copied"; }
+      catch (e) { $("copyMsg").textContent = "copy failed"; }
+    };
+  } else {
+    $("excuse").innerHTML = "";
+  }
+
+  $("raw").innerHTML = `<details><summary>Raw threat report</summary><pre>${esc(data.report_text)}</pre></details>`;
+}
+
+/* ---------------- wiring ---------------- */
+$("addRow").onclick = () => addPersonRow(null);
+
+$("save").onclick = async () => {
+  showError(""); $("saveMsg").textContent = "";
+  try {
+    const saved = await api("/api/blacklist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectPeople()),
+    });
+    $("saveMsg").textContent = `saved ${saved.length}`;
+    setTimeout(() => ($("saveMsg").textContent = ""), 2500);
+  } catch (e) { showError("Could not save blacklist: " + e.message); }
+};
+
+$("scan").onclick = async () => {
+  showError("");
+  $("scan").disabled = true;
+  $("scanMsg").innerHTML = `<span class="spinner"></span> scanning…`;
+  try {
+    const data = await api("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_urls: $("urls").value.split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#")),
+        dry_run: $("dryRun").checked,
+        use_luma_mcp: $("useMcp").checked,
+      }),
+    });
+    render(data);
+  } catch (e) {
+    showError("Scan failed: " + e.message);
+  } finally {
+    $("scan").disabled = false;
+    $("scanMsg").textContent = "";
+  }
+};
+
+(async function init() {
+  try {
+    const people = await api("/api/blacklist");
+    people.forEach(addPersonRow);
+    if (!people.length) addPersonRow(null);
+  } catch (e) { showError("Could not load blacklist: " + e.message); }
+  try {
+    const urls = await api("/api/events");
+    $("urls").value = urls.join("\n") || "https://lu.ma/demo-mixer";
+  } catch (e) { /* non-fatal */ }
+})();
+</script>
+</body>
+</html>
