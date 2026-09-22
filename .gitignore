@@ -3,6 +3,8 @@
 # NopeList
 .env
 data/cache/*.json
+data/.luma*
+*luma_tokens*.json
 data/.cognee/
 data/.fastembed/
 __pycache__/

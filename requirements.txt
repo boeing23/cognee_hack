@@ -1,5 +1,5 @@
 # NopeList runtime deps. Versions verified on PyPI 2026-09-21:
-#   cognee 1.6.0 | strands-agents 1.56.0 | playwright 1.63.0 | python-dotenv 1.2.3 | boto3 1.43.99
+#   cognee 1.6.0 | strands-agents 1.56.0 | mcp 1.30.0 | playwright 1.63.0 | python-dotenv 1.2.3 | boto3 1.43.99
 
 # --- Cognee: the blacklist brain (src/brain.py) ---
 # Base package already bundles fastembed (local CPU embeddings, no OpenAI key needed).
@@ -10,6 +10,12 @@ cognee>=1.6.0,<2
 # anthropic adapter). strands-agents itself pins boto3/botocore for the Bedrock path.
 strands-agents[anthropic]>=1.56.0,<2
 boto3>=1.26.0,<2
+
+# --- MCP Python SDK: official Luma MCP server client (src/luma_mcp.py, src/luma_auth.py) ---
+# Pinned to 1.x: 2.x renamed streamablehttp_client -> streamable_http_client and changed
+# the OAuth callback_handler contract. strands-agents 1.56 allows mcp>=1.23,<2.2, and
+# CIMD (client_metadata_url) support starts in 1.23.
+mcp>=1.23,<2
 
 # --- Bright Data Browser API: guest-list scraping (src/scraper.py, src/discover.py) ---
 # Only the Playwright client is needed: the browser is remote (connect_over_cdp to
