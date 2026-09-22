@@ -94,6 +94,16 @@ python -c 'import asyncio; from src.brain import *; asyncio.run(ingest_blacklist
 python -m src.scraper https://lu.ma/<slug> --no-cache
 ```
 
+## Web UI (simplest way to demo)
+
+```bash
+python -m src.ui
+```
+
+Open http://localhost:8000 — edit the blacklist, paste event URLs, hit **Scan events**.
+Threat cards (🟢 CLEAR / 🟡 AWKWARD / 🔴 EVACUATE) plus an excuse draft with a Copy button.
+The "Dry run (offline demo)" toggle is on by default, so it works with zero keys.
+
 ## Dry-run demo (stage wifi insurance)
 
 Zero network calls: fixtures from `data/fixtures/`, deterministic handle/name/alias
