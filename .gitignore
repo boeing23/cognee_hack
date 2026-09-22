@@ -1,1 +1,11 @@
 .omc/
+
+# NopeList
+.env
+data/cache/*.json
+data/.cognee/
+data/.fastembed/
+__pycache__/
+*.pyc
+.venv/
+.playwright/

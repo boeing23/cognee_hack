@@ -1,0 +1,70 @@
+# NopeList — `docker compose up` runs the agent end to end inside the sandbox container.
+#
+#   docker compose run --rm nopelist                       # live: Strands + Cognee + Bright Data
+#   docker compose --profile dry run --rm nopelist-dry     # offline demo: fixtures only, no LLM, no network
+#
+# Both services share the ./data bind mount so data/blacklist.json, data/events.txt,
+# the scrape cache (data/cache/) and the Cognee brain state (data/.cognee/) persist
+# between runs and can be edited from the host during the demo.
+
+services:
+  nopelist:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nopelist:latest
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    # Agent runs once and exits; `docker compose run --rm nopelist --no-llm` also works.
+    restart: "no"
+    # Sandbox hardening: nothing here should need to escalate.
+    security_opt:
+      - no-new-privileges:true
+    init: true
+
+  # Offline stage-wifi-dies mode. Same image, fixtures only, deterministic matching.
+  nopelist-dry:
+    profiles: ["dry"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nopelist:latest
+    env_file:
+      - path: .env
+        required: false   # dry run needs no keys at all
+    environment:
+      NOPELIST_DRY_RUN: "1"
+    command: ["--no-llm"]
+    volumes:
+      - ./data:/app/data
+    network_mode: "none"   # proves the dry run touches zero network
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    init: true
+
+  # ---------------------------------------------------------------------------------
+  # OPTIONAL sponsor MCP servers (not required by src/ — the app talks to Bright Data
+  # via Playwright CDP and to Cognee via the Python SDK). Uncomment to expose them as
+  # MCP tools for Strands (strands supports MCP clients) or for Claude/Cursor.
+  #
+  # Bright Data MCP server: listed in the Docker MCP Catalog (hub.docker.com/mcp/server/brightdata),
+  # image `mcp/brightdata`, needs API_TOKEN (Bright Data dashboard -> Account settings -> API tokens).
+  # brightdata-mcp:
+  #   image: mcp/brightdata
+  #   environment:
+  #     API_TOKEN: ${BRIGHTDATA_API_TOKEN}
+  #   stdin_open: true
+  #
+  # Cognee MCP server: published by the Cognee team on Docker Hub (cognee/cognee-mcp:main,
+  # https://github.com/topoteretes/cognee/tree/main/cognee-mcp); not in the Docker MCP Catalog.
+  # cognee-mcp:
+  #   image: cognee/cognee-mcp:main
+  #   env_file: .env
+  #   environment:
+  #     TRANSPORT_MODE: http
+  #   ports:
+  #     - "8000:8000"
+  # ---------------------------------------------------------------------------------

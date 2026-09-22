@@ -1,0 +1,20 @@
+# NopeList runtime deps. Versions verified on PyPI 2026-09-21:
+#   cognee 1.6.0 | strands-agents 1.56.0 | playwright 1.63.0 | python-dotenv 1.2.3 | boto3 1.43.99
+
+# --- Cognee: the blacklist brain (src/brain.py) ---
+# Base package already bundles fastembed (local CPU embeddings, no OpenAI key needed).
+cognee>=1.6.0,<2
+
+# --- AWS Strands Agents: the agent harness (src/agent.py) ---
+# [anthropic] extra pulls the `anthropic` client used by AnthropicModel (and by Cognee's
+# anthropic adapter). strands-agents itself pins boto3/botocore for the Bedrock path.
+strands-agents[anthropic]>=1.56.0,<2
+boto3>=1.26.0,<2
+
+# --- Bright Data Browser API: guest-list scraping (src/scraper.py, src/discover.py) ---
+# Only the Playwright client is needed: the browser is remote (connect_over_cdp to
+# brd.superproxy.io), so `playwright install` is NOT required.
+playwright>=1.45,<2
+
+# --- Config ---
+python-dotenv>=1.0
