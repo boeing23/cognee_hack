@@ -65,7 +65,8 @@ evening."
         │              │ browser+parse  │  │  (blacklist) │
         │              └───────────────┘  └──────────────┘
         ▼
-   Option A: pasted event URLs   |   Option B: Luma session cookie (auto-discover)
+   Option A: pasted event URLs   |   Option B: Luma MCP list_events (auto-discover)
+                                     + list_guests for events you HOST (no scrape)
 ```
 
 **Data flow:** seed blacklist → for each registered event, scrape the guest list
@@ -83,10 +84,18 @@ so pick a lane up front.
 - **Option A — Paste URLs (default; safest for a live demo).** You provide 3–5
   Luma event URLs you're registered for. The agent scrapes each guest list. No
   auth flow to break on stage. **Recommended for the demo.**
-- **Option B — Session cookie (the "wow").** Feed your Luma session cookie into
-  the Bright Data Scraping Browser so the agent auto-discovers your registered
-  events, then scrapes each. More impressive, more fragile. Build A first, add B
-  only if time remains.
+- **Option B — Official Luma MCP server (the "wow", and it's clean).**
+  `https://mcp.luma.com` speaks streamable HTTP and authenticates with OAuth
+  **Client ID Metadata Documents**: no API key, no dynamic client registration;
+  the `client_id` is the URL of our hosted `docs/luma-client.json` (GitHub Pages,
+  `https://boeing23.github.io/cognee_hack/luma-client.json`, redirect
+  `http://localhost:3030/callback`). One-time `python -m src.luma_auth` in the
+  main thread, tokens persist in `~/.nopelist/luma_tokens.json`, refresh is
+  automatic. `list_events` answers (a) with the user's role per event; the Luma
+  tools are also attached to the Strands agent via `MCPClient`.
+  For (b): `list_guests` is **host/manager-only** (verified live), so hosted
+  events get a structured guest list from MCP and attended events are still
+  scraped with Bright Data. A is the fallback whenever there is no token.
 
 > Guest lists hide "guests who have not completed their Luma profile," so treat
 > the scrape as best-effort coverage, not a complete roster — note this on stage.
@@ -147,7 +156,7 @@ so pick a lane up front.
 | **3:15–3:45** | Threat report + jokes | Threat levels, petty-reason quotes, optional "suggest an excuse" via the model. |
 | **3:45–4:00** | Demo polish | Pre-warm cache, rehearse the 60s script, seed a guaranteed live hit. |
 
-**Stretch (only if ahead):** Option B cookie auto-discovery · green-list safe
+**Stretch (only if ahead):** Option B Luma MCP auto-discovery · green-list safe
 events · a one-screen web UI instead of terminal output.
 
 ---
@@ -184,8 +193,11 @@ nopelist/
 │  ├─ agent.py               # Strands Agent + tool registration + run loop
 │  ├─ brain.py               # Cognee ingest + match_brain()
 │  ├─ scraper.py             # Bright Data scrape_guests(event_url)
-│  ├─ discover.py            # Option A reader / Option B cookie auto-discover
+│  ├─ discover.py            # Option A reader / Option B Luma MCP auto-discover
+│  ├─ luma_mcp.py            # Luma MCP client: OAuth (CIMD) + typed tool helpers
+│  ├─ luma_auth.py           # one-time browser login (python -m src.luma_auth)
 │  └─ report.py              # threat scoring + rendered alert + excuse gen
+├─ docs/luma-client.json     # OAuth Client ID Metadata Document (served by GitHub Pages)
 └─ README.md                 # quickstart + demo script
 ```
 
@@ -198,7 +210,7 @@ nopelist/
 | Live scrape slow / rate-limited on stage | Pre-warm a cache keyed to the demo events; fall back silently. |
 | Guest list incomplete (hidden profiles) | Say so on stage; frame as best-effort. It's a feature, not a bug. |
 | Name collisions / false positives | Match on handle first, then name; store aliases in the graph; show confidence. |
-| Luma auth eats build time (Option B) | Default to Option A; treat B as stretch only. |
+| Luma auth eats build time (Option B) | Default to Option A; MCP login is a one-off (`src.luma_auth`) and discovery falls back to A without a token. |
 | "Is a blacklist creepy?" from a judge | Lean into the guardrails: personal, alerts-only, no tracking, no contact. It's avoidance, not surveillance. |
 
 ---
