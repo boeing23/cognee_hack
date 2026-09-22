@@ -30,7 +30,7 @@ LLM_ENDPOINT=https://api.meta.ai/v1   LLM_API_KEY=<same value as MODEL_API_KEY>
 Fallback, Anthropic:
 LLM_PROVIDER=anthropic          LLM_MODEL=anthropic/claude-sonnet-5   LLM_API_KEY=sk-ant-...
 Embeddings (either way, local CPU):
-EMBEDDING_PROVIDER=fastembed    EMBEDDING_MODEL=all-MiniLM-L6-v2     EMBEDDING_DIMENSIONS=384
+EMBEDDING_PROVIDER=fastembed    EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2     EMBEDDING_DIMENSIONS=384
 Optional Cognee Cloud: COGNEE_SERVICE_URL + COGNEE_API_KEY (we call cognee.serve()).
 
 Docs consulted: https://docs.cognee.ai/python-api/add, /python-api/cognify,
