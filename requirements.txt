@@ -6,9 +6,11 @@
 cognee>=1.6.0,<2
 
 # --- AWS Strands Agents: the agent harness (src/agent.py) ---
-# [anthropic] extra pulls the `anthropic` client used by AnthropicModel (and by Cognee's
-# anthropic adapter). strands-agents itself pins boto3/botocore for the Bedrock path.
-strands-agents[anthropic]>=1.56.0,<2
+# [openai] extra pulls the `openai` client used by OpenAIModel, which is how we talk to the
+# Meta Model API (Muse Spark, OpenAI-compatible https://api.meta.ai/v1) -- the PRIMARY provider.
+# [anthropic] extra pulls the `anthropic` client used by the AnthropicModel fallback (and by
+# Cognee's anthropic adapter). strands-agents itself pins boto3/botocore for the Bedrock path.
+strands-agents[anthropic,openai]>=1.56.0,<2
 boto3>=1.26.0,<2
 
 # --- MCP Python SDK: official Luma MCP server client (src/luma_mcp.py, src/luma_auth.py) ---
@@ -24,3 +26,5 @@ playwright>=1.45,<2
 
 # --- Config ---
 python-dotenv>=1.0
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
