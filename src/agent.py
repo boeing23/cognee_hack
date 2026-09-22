@@ -9,6 +9,11 @@ Model selection (env):
     ANTHROPIC_API_KEY   -> strands.models.anthropic.AnthropicModel (preferred)
     AWS_ACCESS_KEY_ID / AWS_PROFILE / AWS_BEARER_TOKEN_BEDROCK -> strands.models.BedrockModel
     STRANDS_MODEL_ID    -> override the model id for either provider
+
+Luma MCP (src/luma_mcp.py): after `python -m src.luma_auth`, the official Luma
+MCP server's tools (list_events, get_event, lookup_entity, list_guests, ...) are
+attached to the Strands agent next to the local @tools, via
+strands.tools.mcp.MCPClient. Skipped in NOPELIST_DRY_RUN or when not logged in.
 """
 from __future__ import annotations
 
@@ -84,11 +89,15 @@ def _discover_registered_events() -> str:
 
     if SESSION.events_file:
         os.environ["NOPELIST_EVENTS_FILE"] = SESSION.events_file
-    urls = discover.discover_events()
-    SESSION.event_urls = list(urls)
-    if not urls:
+    entries = discover.discover_events_detailed()
+    SESSION.event_urls = [e["url"] for e in entries]
+    if not entries:
         return "No registered events found."
-    return "Registered events:\n" + "\n".join(f"- {u}" for u in urls)
+    lines = ["Registered events:"]
+    for e in entries:
+        role = "hosting" if e.get("is_host") else (e.get("status") or "attending")
+        lines.append(f"- {e['url']}  ({role}; {e.get('name', '')}; source={e.get('source', 'events.txt')})")
+    return "\n".join(lines)
 
 
 def _scrape_event_guests(event_url: str) -> str:
@@ -100,7 +109,14 @@ def _scrape_event_guests(event_url: str) -> str:
     SESSION.events[event_url] = event
     if event_url not in SESSION.event_urls:
         SESSION.event_urls.append(event_url)
-    src = "cache" if event.from_cache else "live"
+    from src import luma_mcp
+
+    if event.from_cache:
+        src = "cache"
+    elif luma_mcp.is_hosted_event(event_url):
+        src = "luma-mcp"
+    else:
+        src = "live"
     total = f" of {event.guest_count}" if event.guest_count is not None else ""
     return f"Scraped '{event.title}' ({src}): {len(event.guests)} guests{total}."
 
@@ -161,7 +177,8 @@ def _build_tools() -> list[Callable[..., Any]]:
 
     @tool
     def scrape_event_guests(event_url: str) -> str:
-        """Read the live guest list of one Luma event via Bright Data (or the cache).
+        """Read the guest list of one Luma event: Luma MCP list_guests for events the
+        user hosts, otherwise Bright Data (or the cache).
 
         Args:
             event_url: The Luma event URL, exactly as returned by discover_registered_events.
@@ -216,6 +233,13 @@ blacklist of people they'd rather not run into. Your job, in this exact order:
    event (highest threat) and finish with a punched-up, under-60-word excuse text
    the user can send to the host. Never name the person being avoided in the excuse.
 
+When the official Luma MCP tools are attached (list_events, get_event,
+lookup_entity, list_guests, get_self, ...) you may use them to check event
+details or confirm the user's role. list_guests works ONLY for events the user
+hosts or manages; for events they merely attend it is denied, and
+scrape_event_guests (Bright Data) is the way to read the guest list. Do not
+create, edit, invite, message or otherwise mutate anything on Luma.
+
 Rules: alerts go only to the user. Do not suggest contacting, tracking, or
 investigating anyone. Keep commentary short and dry; the report speaks for itself.
 """
@@ -265,21 +289,42 @@ def _callback_handler(**kwargs: Any) -> None:
             _log(f"\n[tool] {tool_use['name']}")
 
 
-def run_with_agent() -> str:
+PROMPT = (
+    "Scan every event I'm registered for, tell me where my nemeses are, "
+    "and draft me an excuse for the worst one."
+)
+
+
+def _run_agent(extra_tools: list[Any]) -> str:
     from strands import Agent
 
     agent = Agent(
         model=_build_model(),
-        tools=_build_tools(),
+        tools=_build_tools() + list(extra_tools),
         system_prompt=SYSTEM_PROMPT,
         callback_handler=_callback_handler,
     )
-    result = agent(
-        "Scan every event I'm registered for, tell me where my nemeses are, "
-        "and draft me an excuse for the worst one."
-    )
+    result = agent(PROMPT)
     print()
     return str(result)
+
+
+def run_with_agent() -> str:
+    """Strands loop. With a Luma login (and not dry-run) the official Luma MCP
+    tools are attached; the agent is built and run INSIDE the MCPClient context."""
+    from src import luma_mcp
+    from src.brain import dry_run
+
+    if dry_run() or not luma_mcp.has_token():
+        if not dry_run():
+            _log(f"[luma] not logged in; Luma MCP tools not attached. {luma_mcp.LOGIN_HINT}")
+        return _run_agent([])
+
+    _log("[luma] attaching official Luma MCP tools (https://mcp.luma.com)")
+    with luma_mcp.make_mcp_client() as luma:
+        mcp_tools = luma.list_tools_sync()
+        _log(f"[luma] {len(mcp_tools)} MCP tools: " + ", ".join(t.tool_name for t in mcp_tools))
+        return _run_agent(mcp_tools)
 
 
 def run_without_llm() -> str:

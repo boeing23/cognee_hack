@@ -11,14 +11,14 @@ scraping, because it is what the page itself calls (verified 2026-09-21):
   * GET https://api.lu.ma/url?url=<slug>
         public; returns {"kind": "event", "data": {api_id, event.name,
         guest_count, featured_guests, ...}}
-  * GET https://api.lu.ma/event/get-guest-list?event_api_id=<api_id>
-        &pagination_limit=<n>[&pagination_cursor=<cursor>]
-        requires the logged-in cookie ``luma.auth-session-key`` (returns
-        401 "You are not signed in." otherwise, even for public events).
 
-When the cookie is absent (or the API call fails) we fall back to opening the
-"N Guests" modal and reading the DOM, which yields the subset Luma shows to
-logged-out visitors.
+Then we open the "N Guests" modal and read the DOM, which yields the subset
+Luma shows to visitors (the internal get-guest-list endpoint needs a login).
+
+Events the user HOSTS skip Bright Data entirely: src/discover.py marks them in
+``src.luma_mcp.hosted_event_ids`` and scrape_guests() pulls the structured guest
+list from the official Luma MCP server (``list_guests``, host-only). Events the
+user merely attends cannot use that tool (verified live), so they are scraped.
 
 Alternative Bright Data products: Web Unlocker / Web Scraper API can fetch the
 raw event HTML, but the guest list is loaded client-side, so they only expose
@@ -34,7 +34,6 @@ Environment variables (read here, loaded from .env by the entrypoint):
   BRIGHTDATA_BROWSER_PASS   Browser API zone password
   BRIGHTDATA_BROWSER_AUTH   optional "USER:PASS" in one string (overrides the two above)
   BRIGHTDATA_BROWSER_WSS    optional full endpoint override (default wss://<AUTH>@brd.superproxy.io:9222)
-  LUMA_SESSION_COOKIE       optional value of the luma.auth-session-key cookie (unlocks full guest list)
   NOPELIST_DRY_RUN          "1" -> fixtures only, never touch the network
 """
 from __future__ import annotations
@@ -50,6 +49,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from src import luma_mcp
 from src.models import Event, Guest
 
 log = logging.getLogger("nopelist.scraper")
@@ -59,7 +59,6 @@ CACHE_DIR = ROOT / "data" / "cache"
 FIXTURE_DIR = ROOT / "data" / "fixtures"
 
 LUMA_API = "https://api.lu.ma"
-LUMA_COOKIE_NAME = "luma.auth-session-key"
 BRD_DEFAULT_HOST = "brd.superproxy.io:9222"
 PAGE_TIMEOUT_MS = 2 * 60 * 1000  # Bright Data recommends a generous goto timeout
 GUEST_PAGE_SIZE = 100
@@ -158,28 +157,12 @@ def brightdata_endpoint() -> str:
     return f"wss://{auth}@{BRD_DEFAULT_HOST}"
 
 
-def luma_cookies() -> list[dict]:
-    """Playwright cookie dicts for the optional Luma session cookie."""
-    value = os.getenv("LUMA_SESSION_COOKIE", "").strip()
-    if not value:
-        return []
-    return [
-        {"name": LUMA_COOKIE_NAME, "value": value, "domain": d, "path": "/",
-         "secure": True, "httpOnly": True, "sameSite": "Lax"}
-        for d in (".lu.ma", ".luma.com")
-    ]
-
-
 def open_luma_page(playwright_ctx):  # -> (browser, page)
-    """Connect to Bright Data Browser API and return (browser, page) with cookies applied."""
+    """Connect to Bright Data Browser API and return (browser, page)."""
     endpoint = brightdata_endpoint()
     log.info("Connecting to Bright Data Browser API at %s", BRD_DEFAULT_HOST)
     browser = playwright_ctx.chromium.connect_over_cdp(endpoint, timeout=PAGE_TIMEOUT_MS)
     context = browser.contexts[0] if browser.contexts else browser.new_context()
-    cookies = luma_cookies()
-    if cookies:
-        context.add_cookies(cookies)
-        log.info("Applied LUMA_SESSION_COOKIE to browser context")
     page = context.pages[0] if context.pages else context.new_page()
     page.set_default_timeout(PAGE_TIMEOUT_MS)
     return browser, page
@@ -208,7 +191,7 @@ def luma_api_get(page, path: str, params: dict[str, str]) -> Optional[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# Guest extraction (API first, DOM fallback)
+# Guest extraction (DOM modal, featured_guests fallback)
 # --------------------------------------------------------------------------- #
 _INSTA_KEYS = ("instagram_handle", "instagram", "instagram_url")
 _X_KEYS = ("twitter_handle", "x_handle", "twitter", "x", "twitter_url", "x_url")
@@ -225,27 +208,6 @@ def _guest_from_api_entry(entry: dict) -> Optional[Guest]:
     insta = next((_clean_handle(src.get(k)) for k in _INSTA_KEYS if src.get(k)), None)
     x = next((_clean_handle(src.get(k)) for k in _X_KEYS if src.get(k)), None)
     return Guest(name=name.strip(), instagram=insta, x_handle=x)
-
-
-def guests_via_api(page, event_api_id: str) -> Optional[list[Guest]]:
-    """Paginate api.lu.ma/event/get-guest-list. None if unauthorised."""
-    guests: list[Guest] = []
-    cursor: Optional[str] = None
-    for _ in range(50):  # hard stop: 5k guests
-        params = {"event_api_id": event_api_id, "pagination_limit": str(GUEST_PAGE_SIZE)}
-        if cursor:
-            params["pagination_cursor"] = cursor
-        data = luma_api_get(page, "event/get-guest-list", params)
-        if data is None:
-            return None if not guests else guests
-        for entry in data.get("entries", []):
-            g = _guest_from_api_entry(entry)
-            if g:
-                guests.append(g)
-        cursor = data.get("next_cursor")
-        if not data.get("has_more") or not cursor:
-            break
-    return guests
 
 
 def guests_via_dom(page) -> list[Guest]:
@@ -317,14 +279,8 @@ def _scrape_live(event_url: str) -> Event:
                 except Exception:
                     pass
 
-            guests: Optional[list[Guest]] = None
-            if api_id and os.getenv("LUMA_SESSION_COOKIE"):
-                guests = guests_via_api(page, api_id)
-                if guests is not None:
-                    log.info("Guest list via Luma internal API: %d guests", len(guests))
-            if guests is None:
-                guests = guests_via_dom(page)
-                log.info("Guest list via DOM modal: %d guests", len(guests))
+            guests = guests_via_dom(page)
+            log.info("Guest list via DOM modal: %d guests", len(guests))
             if not guests and meta:
                 # Last resort: the public 'featured_guests' snippet.
                 guests = [g for g in (_guest_from_api_entry(e) for e in meta["data"].get("featured_guests", [])) if g]
@@ -357,17 +313,51 @@ def _run_in_thread(fn, *args):
 
 
 # --------------------------------------------------------------------------- #
+# Luma MCP path (hosted events only)
+# --------------------------------------------------------------------------- #
+def _guests_via_luma_mcp(event_url: str) -> Event:
+    """Structured guest list via the official Luma MCP server (host-only tool)."""
+    slug = event_slug(event_url)
+    api_id = luma_mcp.hosted_event_api_id(event_url)  # recorded by discover_events_detailed()
+    if not api_id and slug.startswith("evt-"):
+        api_id = slug
+    if not api_id:
+        entity = luma_mcp.lookup_entity(event_url) or {}
+        api_id = entity.get("id") or entity.get("api_id") or (entity.get("event") or {}).get("api_id")
+    if not api_id:
+        raise RuntimeError(f"Could not resolve a Luma event id for {event_url}")
+    detail = luma_mcp.get_event(str(api_id))
+    title = detail.get("name") or (detail.get("event") or {}).get("name") or slug
+    guest_count = detail.get("guest_count") or (detail.get("event") or {}).get("guest_count")
+    entries = luma_mcp.list_event_guests(str(api_id))
+    guests = luma_mcp.hosted_event_guests_as_guests(entries)
+    return Event(url=event_url, title=str(title), guests=guests, guest_count=guest_count, from_cache=False)
+
+
+# --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 def scrape_guests(event_url: str, use_cache: bool = True) -> Event:
     """Return the guest list for a Luma event.
 
-    Order of precedence: dry-run fixture -> cache (if ``use_cache``) -> live
-    Bright Data Browser API scrape (which then populates the cache).
+    Order of precedence: dry-run fixture -> Luma MCP list_guests (events the
+    user HOSTS, when logged in) -> cache (if ``use_cache``) -> live Bright Data
+    Browser API scrape (which then populates the cache).
     """
     event_url = event_url.strip()
     if dry_run():
         return _load_fixture(event_url)
+
+    if luma_mcp.is_hosted_event(event_url) and luma_mcp.has_token():
+        try:
+            event = _guests_via_luma_mcp(event_url)
+            log.info("source=luma-mcp: '%s' %d guests (hosted event, no scrape)", event.title, len(event.guests))
+            _write_cache(event)
+            return event
+        except luma_mcp.LumaAccessError as exc:
+            log.warning("%s -> falling back to Bright Data", exc)
+        except Exception as exc:  # noqa: BLE001 - MCP is an optimisation, never a blocker
+            log.error("Luma MCP guest list failed (%s); falling back to Bright Data", exc)
 
     path = cache_path(event_url)
     if use_cache and path.exists():
