@@ -1,0 +1,8 @@
+# NopeList — Option A event list. One Luma event URL per line (lu.ma/<slug> or luma.com/<slug>).
+# Lines starting with '#' are ignored. Paste the events you are registered for, e.g.:
+# https://lu.ma/model-distillation-mixer
+#
+# Dry-run demo examples (any slug without its own data/fixtures/guests_<slug>.json
+# falls back to guests_default.json). Uncomment to try NOPELIST_DRY_RUN=1:
+# https://lu.ma/demo-mixer
+# https://lu.ma/distillation-talk
