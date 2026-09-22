@@ -12,8 +12,12 @@ scraping, because it is what the page itself calls (verified 2026-09-21):
         public; returns {"kind": "event", "data": {api_id, event.name,
         guest_count, featured_guests, ...}}
 
-Then we open the "N Guests" modal and read the DOM, which yields the subset
-Luma shows to visitors (the internal get-guest-list endpoint needs a login).
+When LUMA_SESSION_COOKIE is set we then fetch the FULL guest list with httpx,
+outside the browser: Bright Data forbids setting Luma's auth cookie over CDP
+("Overriding luma.auth-session-key cookies is forbidden"), but
+api.lu.ma/event/get-guest-list accepts the cookie as a plain request header.
+See ``guests_via_api``. Without the cookie we open the "N Guests" modal and
+read the DOM, which yields only the subset Luma shows to logged-out visitors.
 
 Events the user HOSTS skip Bright Data entirely: src/discover.py marks them in
 ``src.luma_mcp.hosted_event_ids`` and scrape_guests() pulls the structured guest
@@ -70,6 +74,11 @@ GUEST_PAGE_CAP = 500  # stop scrolling the modal after this many rows
 
 LUMA_COOKIE_NAME = "luma.auth-session-key"
 LUMA_COOKIE_DOMAINS = (".lu.ma", ".luma.com")
+GUEST_API_PAGE_CAP = 1000  # stop paginating get-guest-list after this many rows
+BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+)
 
 # Zero-width / bidi junk Luma sprinkles through its rich-text description blocks.
 _ZERO_WIDTH_RE = re.compile(r"[​-‏  ﻿­]")
@@ -292,6 +301,60 @@ def _guest_from_api_entry(entry: dict) -> Optional[Guest]:
     return Guest(name=name, instagram=insta, x_handle=x)
 
 
+def guests_via_api(event_api_id: str) -> Optional[list[Guest]]:
+    """Full guest list straight from Luma's internal API, outside the browser.
+
+    Bright Data's Browser API forbids ``Storage.setCookies`` for Luma's auth
+    cookie ("Overriding luma.auth-session-key cookies is forbidden"), so the
+    remote Chromium can never be logged in. The endpoint is a plain JSON GET
+    though, so we call it with httpx and the cookie as a request header
+    (verified live 2026-09-21):
+
+        GET https://api.lu.ma/event/get-guest-list
+            ?event_api_id=<evt-...>&pagination_limit=100[&pagination_cursor=...]
+            Cookie: luma.auth-session-key=<value>
+        -> {"entries": [{"api_id", "user": {"name", "instagram_handle",
+            "twitter_handle", ...}}], "has_more": bool, "next_cursor": str}
+
+    Returns None when the cookie is missing/rejected (401), so the caller can
+    fall back to the logged-out browser path.
+    """
+    import httpx
+
+    cookie = luma_session_cookie()
+    if not cookie:
+        return None
+    headers = {
+        "Cookie": f"{LUMA_COOKIE_NAME}={cookie}",
+        "accept": "application/json",
+        "user-agent": BROWSER_UA,
+    }
+    guests: list[Guest] = []
+    cursor: Optional[str] = None
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
+        while len(guests) < GUEST_API_PAGE_CAP:
+            params = {"event_api_id": event_api_id, "pagination_limit": str(GUEST_PAGE_SIZE)}
+            if cursor:
+                params["pagination_cursor"] = cursor
+            try:
+                res = client.get(f"{LUMA_API}/event/get-guest-list", params=params, headers=headers)
+            except Exception as exc:  # noqa: BLE001 - network hiccup -> fall back
+                log.warning("Luma guest API request failed (%s)", exc)
+                return guests or None
+            if res.status_code != 200:
+                log.warning("Luma guest API -> HTTP %s: %s", res.status_code, res.text[:120])
+                return guests or None
+            data = res.json()
+            for entry in data.get("entries", []):
+                guest = _guest_from_api_entry(entry)
+                if guest and _looks_like_person(guest.name):
+                    guests.append(guest)
+            cursor = data.get("next_cursor")
+            if not data.get("has_more") or not cursor:
+                break
+    return _dedupe(guests)
+
+
 def watch_guest_api(page) -> list[dict]:
     """Record every JSON response from Luma's API whose URL mentions 'guest'.
 
@@ -483,7 +546,16 @@ def _scrape_live(event_url: str) -> Event:
                 except Exception:
                     pass
 
-            if open_guest_modal(page):
+            guests: list[Guest] = []
+            if api_id and luma_session_cookie():
+                from_api = guests_via_api(str(api_id))
+                if from_api:
+                    guests = from_api
+                    log.info("Guest list via authenticated Luma API: %d guests", len(guests))
+                else:
+                    log.warning("Authenticated Luma API returned nothing; trying the browser")
+
+            if not guests and open_guest_modal(page):
                 _scroll_dialog(page)
                 page.wait_for_timeout(500)
                 guests = guests_from_api_payloads(captured)
@@ -492,8 +564,6 @@ def _scrape_live(event_url: str) -> Event:
                 else:
                     guests = guests_from_dialog(page)
                     log.info("Guest list via guest dialog DOM: %d guests", len(guests))
-            else:
-                guests = []
 
             if not guests:
                 # Logged out: Luma renders hosts + a few featured avatars and nothing else.
