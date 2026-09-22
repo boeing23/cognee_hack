@@ -20,9 +20,16 @@ Dry-run mode
 step 3 is skipped. Steps 1 and 2 are pure Python and always run, so the demo
 still produces hits with no network at all.
 
-Cognee configuration (all read from the environment by cognee itself)
+Cognee configuration (all read from the environment by cognee itself; nothing
+in this module names a provider)
 ---------------------------------------------------------------------
+Primary, Meta Model API (Muse Spark) through Cognee's OpenAI-compatible "custom"
+provider (LiteLLM under the hood, so the model id carries the ``openai/`` prefix):
+LLM_PROVIDER=custom             LLM_MODEL=openai/muse-spark-1.3
+LLM_ENDPOINT=https://api.meta.ai/v1   LLM_API_KEY=<same value as MODEL_API_KEY>
+Fallback, Anthropic:
 LLM_PROVIDER=anthropic          LLM_MODEL=anthropic/claude-sonnet-5   LLM_API_KEY=sk-ant-...
+Embeddings (either way, local CPU):
 EMBEDDING_PROVIDER=fastembed    EMBEDDING_MODEL=all-MiniLM-L6-v2     EMBEDDING_DIMENSIONS=384
 Optional Cognee Cloud: COGNEE_SERVICE_URL + COGNEE_API_KEY (we call cognee.serve()).
 

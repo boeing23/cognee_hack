@@ -5,10 +5,14 @@ Run:
     python -m src.agent --no-llm             # deterministic pipeline, no model calls
     NOPELIST_DRY_RUN=1 python -m src.agent --no-llm   # fixtures only, no network
 
-Model selection (env):
-    ANTHROPIC_API_KEY   -> strands.models.anthropic.AnthropicModel (preferred)
-    AWS_ACCESS_KEY_ID / AWS_PROFILE / AWS_BEARER_TOKEN_BEDROCK -> strands.models.BedrockModel
-    STRANDS_MODEL_ID    -> override the model id for either provider
+Model selection (env), first match wins:
+    MODEL_API_KEY       -> strands.models.openai.OpenAIModel against the Meta Model API
+                           (Muse Spark, OpenAI-compatible: https://api.meta.ai/v1)  [PRIMARY]
+    ANTHROPIC_API_KEY   -> strands.models.anthropic.AnthropicModel                  [fallback]
+    AWS_ACCESS_KEY_ID / AWS_PROFILE / AWS_BEARER_TOKEN_BEDROCK -> BedrockModel      [fallback]
+    NOPELIST_MODEL_PROVIDER=meta|anthropic|bedrock -> force one provider
+    STRANDS_MODEL_ID    -> override the model id for whichever provider is active
+    META_API_BASE_URL   -> override the Meta base URL (default https://api.meta.ai/v1)
 
 Luma MCP (src/luma_mcp.py): after `python -m src.luma_auth`, the official Luma
 MCP server's tools (list_events, get_event, lookup_entity, list_guests, ...) are
@@ -30,6 +34,8 @@ from src.report import build_results, render_report
 
 T = TypeVar("T")
 
+DEFAULT_META_MODEL = "muse-spark-1.3"          # https://dev.meta.ai/docs (also: muse-spark-1.1)
+DEFAULT_META_BASE_URL = "https://api.meta.ai/v1"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
 DEFAULT_BEDROCK_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
@@ -245,33 +251,84 @@ investigating anyone. Keep commentary short and dry; the report speaks for itsel
 """
 
 
-def _build_model() -> Any:
-    """Anthropic API key first; Bedrock if AWS creds are present; else fail loudly."""
+def _has_aws_creds() -> bool:
+    return any(os.getenv(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_PROFILE", "AWS_BEARER_TOKEN_BEDROCK"))
+
+
+def _pick_provider() -> str:
+    """Explicit NOPELIST_MODEL_PROVIDER wins; else MODEL_API_KEY -> ANTHROPIC_API_KEY -> AWS."""
+    forced = os.getenv("NOPELIST_MODEL_PROVIDER", "").strip().lower()
+    if forced:
+        if forced not in {"meta", "anthropic", "bedrock"}:
+            raise SystemExit(
+                f"NOPELIST_MODEL_PROVIDER={forced!r} is not one of meta|anthropic|bedrock."
+            )
+        return forced
+    if os.getenv("MODEL_API_KEY"):
+        return "meta"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if _has_aws_creds():
+        return "bedrock"
+    raise SystemExit(
+        "No model credentials. Set MODEL_API_KEY (Meta Model API, https://dev.meta.ai), "
+        "or ANTHROPIC_API_KEY / AWS creds for the fallback providers, or run with --no-llm."
+    )
+
+
+def build_model() -> Any:
+    """Construct the Strands model for the chosen provider. Never touches the network.
+
+    Meta (primary): OpenAI-compatible chat completions at https://api.meta.ai/v1 via
+    strands.models.openai.OpenAIModel (docs: strandsagents.com model-providers/openai,
+    dev.meta.ai/docs/protocols/chat-completions).
+    """
+    provider = _pick_provider()
     model_id = os.getenv("STRANDS_MODEL_ID")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    if anthropic_key:
+    max_tokens = int(os.getenv("STRANDS_MAX_TOKENS", "2048"))
+
+    if provider == "meta":
+        api_key = os.getenv("MODEL_API_KEY")
+        if not api_key:
+            raise SystemExit("NOPELIST_MODEL_PROVIDER=meta but MODEL_API_KEY is not set.")
+        from strands.models.openai import OpenAIModel
+
+        base_url = os.getenv("META_API_BASE_URL", DEFAULT_META_BASE_URL)
+        model_id = model_id or DEFAULT_META_MODEL
+        _log(f"[model] meta (Muse Spark) {model_id} via {base_url}")
+        return OpenAIModel(
+            client_args={"api_key": api_key, "base_url": base_url},
+            model_id=model_id,
+            params={"max_tokens": max_tokens},
+        )
+
+    if provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise SystemExit("NOPELIST_MODEL_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set.")
         from strands.models.anthropic import AnthropicModel
 
+        model_id = model_id or DEFAULT_ANTHROPIC_MODEL
+        _log(f"[model] anthropic {model_id}")
         return AnthropicModel(
-            client_args={"api_key": anthropic_key},
-            model_id=model_id or DEFAULT_ANTHROPIC_MODEL,
-            max_tokens=int(os.getenv("STRANDS_MAX_TOKENS", "2048")),
+            client_args={"api_key": api_key},
+            model_id=model_id,
+            max_tokens=max_tokens,
         )
-    has_aws = any(
-        os.getenv(k)
-        for k in ("AWS_ACCESS_KEY_ID", "AWS_PROFILE", "AWS_BEARER_TOKEN_BEDROCK")
-    )
-    if has_aws:
-        from strands.models import BedrockModel
 
-        return BedrockModel(
-            model_id=model_id or DEFAULT_BEDROCK_MODEL,
-            region_name=os.getenv("AWS_REGION", "us-west-2"),
-        )
-    raise SystemExit(
-        "No model credentials. Set ANTHROPIC_API_KEY (or AWS creds for Bedrock), "
-        "or run with --no-llm."
-    )
+    # bedrock
+    if not _has_aws_creds():
+        raise SystemExit("NOPELIST_MODEL_PROVIDER=bedrock but no AWS credentials are set.")
+    from strands.models import BedrockModel
+
+    model_id = model_id or DEFAULT_BEDROCK_MODEL
+    region = os.getenv("AWS_REGION", "us-west-2")
+    _log(f"[model] bedrock {model_id} ({region})")
+    return BedrockModel(model_id=model_id, region_name=region)
+
+
+# Backwards-compatible alias.
+_build_model = build_model
 
 
 _SEEN_TOOL_USES: set[str] = set()
@@ -299,7 +356,7 @@ def _run_agent(extra_tools: list[Any]) -> str:
     from strands import Agent
 
     agent = Agent(
-        model=_build_model(),
+        model=build_model(),
         tools=_build_tools() + list(extra_tools),
         system_prompt=SYSTEM_PROMPT,
         callback_handler=_callback_handler,
