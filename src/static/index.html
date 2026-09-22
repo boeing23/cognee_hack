@@ -4,130 +4,249 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NopeList</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0e1014; --panel: #171a21; --panel2: #1e222b; --line: #2b3040;
-    --text: #e7e9ee; --muted: #9aa2b1; --accent: #7c5cff;
-    --red: #ff5f56; --yellow: #ffbd2e; --green: #2ecc71;
+  :root{
+    --ink:#241E2E; --velvet:#302839; --raise:#392F43; --line:#493D54;
+    --chalk:#EFE8F2; --dim:#A093AE;
+    --brass:#D8B26A; --brass-dim:#8E7442;
+    --jade:#6FBF8F; --amber:#E8903C; --blush:#EF5F52;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  *{box-sizing:border-box}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--ink); color:var(--chalk); overflow:hidden;
+    font:14px/1.45 "IBM Plex Sans", system-ui, -apple-system, Segoe UI, sans-serif; -webkit-font-smoothing:antialiased;
+    display:grid; grid-template-rows:auto auto 1fr;
   }
-  header { padding: 20px 24px 8px; }
-  h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
-  header p { margin: 4px 0 0; color: var(--muted); }
-  main { padding: 16px 24px 48px; max-width: 1240px; }
-  .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
-  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .panel h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--muted); padding: 4px; font-weight: 600; }
-  td { padding: 2px; vertical-align: middle; }
-  input[type=text], textarea, select {
-    width: 100%; background: var(--panel2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit;
+
+  /* ---------------- control strip ---------------- */
+  .strip{
+    display:flex; align-items:center; gap:22px; flex-wrap:nowrap;
+    padding:12px 24px; background:var(--velvet); border-bottom:1px solid var(--line);
   }
-  textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); }
-  button {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
+  .mark{font-size:23px; font-weight:600; line-height:1.1; margin:0; white-space:nowrap; letter-spacing:-.01em;}
+  .mark em{font-style:normal; color:var(--brass);}
+  .mark span{display:block; font-weight:400; font-size:11px; color:var(--dim); margin-top:3px;}
+  .strip-sep{width:1px; align-self:stretch; background:var(--line);}
+  .field{flex:1 1 auto; min-width:160px;}
+  .field label{display:block; font-size:11px; color:var(--dim); margin-bottom:3px;}
+  .toggles{display:flex; gap:18px; white-space:nowrap;}
+  .tg{display:flex; align-items:center; gap:7px; font-size:13px;}
+  .tg small{color:var(--dim); display:block; font-size:11px;}
+  .tg label{cursor:pointer;}
+
+  /* ---------------- atoms ---------------- */
+  input[type=text], textarea, select{
+    width:100%; background:var(--ink); color:var(--chalk);
+    border:1px solid var(--line); border-radius:3px; padding:5px 7px;
+    font:13.5px/1.35 "IBM Plex Sans", system-ui, sans-serif;
   }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  button.primary:disabled { opacity: .55; cursor: not-allowed; }
-  button.mini { padding: 2px 8px; color: var(--muted); }
-  .row-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-  .opt { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); }
-  .spinner {
-    width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
-    border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
+  input::placeholder, textarea::placeholder{color:#6B6076;}
+  textarea{height:52px; resize:none; font-size:13px;}
+  select{appearance:none; padding-right:20px; cursor:pointer;
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 11px) 52%, calc(100% - 7px) 52%;
+    background-size:4px 4px,4px 4px; background-repeat:no-repeat;}
+  :focus-visible{outline:2px solid var(--brass); outline-offset:1px;}
+  input[type=checkbox]{accent-color:var(--brass); width:15px; height:15px; margin:0; cursor:pointer;}
+
+  button{
+    font:500 13.5px/1 "IBM Plex Sans", system-ui, sans-serif; cursor:pointer; border-radius:3px;
+    background:transparent; color:var(--chalk); border:1px solid var(--line); padding:8px 13px;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .banner { display: none; margin: 14px 0; padding: 10px 12px; border-radius: 8px;
-    background: #3a1418; border: 1px solid var(--red); color: #ffd4d1; white-space: pre-wrap; }
-  .ok { color: var(--green); }
-  #summary { margin: 18px 0 10px; color: var(--muted); }
-  .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line);
-    border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
-  .card.EVACUATE { border-left-color: var(--red); }
-  .card.AWKWARD { border-left-color: var(--yellow); }
-  .card.CLEAR { border-left-color: var(--green); }
-  .card h3 { margin: 0 0 2px; font-size: 16px; }
-  .card .meta { color: var(--muted); font-size: 12px; }
-  .card a { color: var(--muted); }
-  .hit { margin-top: 8px; padding: 8px 10px; background: var(--panel2); border-radius: 6px; }
-  .hit .who { font-weight: 600; }
-  .hit .tag { color: var(--muted); font-size: 12px; margin-left: 6px; }
-  .hit .reason { color: #ffb4ae; font-style: italic; margin-top: 2px; }
-  .safe { margin-top: 6px; color: var(--green); }
-  .excuse { background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin: 14px 0; }
-  .excuse p { white-space: pre-wrap; margin: 6px 0 10px; }
-  details { margin-top: 12px; color: var(--muted); }
-  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 12px; overflow: auto; font-size: 12px; color: var(--text); }
-  .empty { color: var(--muted); padding: 6px 2px; }
+  button:hover{border-color:var(--brass-dim);}
+  .cta{background:var(--brass); border-color:var(--brass); color:#2B2113; font-weight:600;
+       padding:11px 22px; font-size:14.5px; white-space:nowrap;}
+  .cta:hover{background:#E5C182; border-color:#E5C182;}
+  .cta[disabled]{opacity:.6; cursor:progress;}
+  .said{color:var(--jade); font-size:12.5px;}
+
+  /* ---------------- banner ---------------- */
+  .banner{border-bottom:1px solid var(--blush); background:#3A2130; color:#FFD9D4;
+    padding:10px 24px; white-space:pre-wrap; font-size:13.5px;}
+  .banner:empty{padding:0; border:0; background:none;}
+
+  /* ---------------- two panes ---------------- */
+  .panes{display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); min-height:0;}
+  .pane{min-height:0; display:flex; flex-direction:column;}
+  .pane + .pane{border-left:1px solid var(--line);}
+  .pane-head{display:flex; align-items:baseline; gap:12px; padding:14px 24px 10px;}
+  .pane-head h2{font-weight:600; font-size:16px; margin:0; letter-spacing:-.005em;}
+  .pane-head p{margin:0; color:var(--dim); font-size:12.5px;}
+  .pane-body{flex:1 1 auto; min-height:0; overflow-y:auto; padding:0 24px 16px;}
+  .pane-foot{display:flex; align-items:center; gap:12px; padding:10px 24px 14px; border-top:1px solid var(--line);}
+
+  /* ---------------- table ---------------- */
+  table{width:100%; border-collapse:collapse;}
+  thead th{
+    position:sticky; top:0; z-index:2; background:var(--ink); text-align:left;
+    font-size:11px; font-weight:500; color:var(--dim); padding:0 5px 7px; white-space:nowrap;
+    box-shadow:inset 0 -1px 0 var(--line);
+  }
+  tbody td{padding:3px 5px; vertical-align:middle; border-bottom:1px solid #372F41;}
+  tbody tr:last-child td{border-bottom:0;}
+  td.mid{text-align:center;}
+  .c-name{width:15%} .c-alias{width:14%} .c-ig{width:11%} .c-x{width:11%}
+  .c-reason{width:auto} .c-threat{width:84px} .c-like{width:52px} .c-del{width:34px}
+  .x-btn{border:0; padding:4px 6px; color:var(--dim); font-size:15px; line-height:1; background:none;}
+  .x-btn:hover{color:var(--blush);}
+  .rows-note{color:var(--dim); font-size:12.5px; margin-left:auto;}
+  td.adder{padding:0; border:0;}
+  .add-row{width:100%; text-align:left; border:1px dashed var(--line); background:none;
+    color:var(--dim); padding:9px 8px; margin-top:6px; font-size:13px;}
+  .add-row:hover{border-color:var(--brass-dim); color:var(--chalk);}
+
+  /* ---------------- results ---------------- */
+  .quiet{color:var(--dim); font-size:14px; line-height:1.55; max-width:52ch; padding:2px 0 0;}
+  .summary{color:var(--dim); font-size:12.5px; padding-bottom:12px; margin-bottom:4px; border-bottom:1px solid var(--line);}
+  .summary b{color:var(--chalk); font-weight:500;}
+
+  .verdict{border-top:1px solid var(--line); padding:16px 0 14px;}
+  .verdict:first-child{border-top:0; padding-top:4px;}
+  .v-word{font-size:26px; font-weight:600; line-height:1.1; letter-spacing:.01em;}
+  .EVACUATE .v-word{color:var(--blush);} .AWKWARD .v-word{color:var(--amber);} .CLEAR .v-word{color:var(--jade);}
+  .v-title{font-weight:500; font-size:16px; line-height:1.3; margin:3px 0 0;}
+  .v-meta{color:var(--dim); font-size:11.5px; margin:4px 0 0;}
+  .v-meta a{color:var(--dim);}
+  .v-body{margin-top:12px; display:grid; grid-template-columns:2px 1fr; gap:14px;}
+  .spine{border-radius:2px; background:var(--line);}
+  .EVACUATE .spine{background:var(--blush);} .AWKWARD .spine{background:var(--amber);} .CLEAR .spine{background:var(--jade);}
+  .hit{padding-bottom:12px;}
+  .hit:last-child{padding-bottom:0;}
+  .who{font-size:14.5px; font-weight:500;}
+  .who small{font-weight:400; color:var(--dim); font-size:12.5px; margin-left:6px;}
+  .why{font-style:italic; font-size:14.5px; line-height:1.5; margin:4px 0 4px; max-width:62ch; color:#F6EFF6;}
+  .prov{color:var(--dim); font-size:11.5px;}
+  .friendly{color:var(--jade); font-size:13.5px; padding-bottom:8px;}
+  .friendly i{color:#9AD7B4;}
+  .nobody{color:var(--dim); font-size:13.5px;}
+
+  .excuse{margin-top:18px; border-top:1px solid var(--brass-dim); padding-top:14px;}
+  .excuse h3{font-weight:600; font-size:14px; margin:0; color:var(--brass);}
+  .excuse p{font-size:14px; line-height:1.55; max-width:58ch; margin:8px 0 10px; white-space:pre-wrap;}
+  details{margin-top:16px; color:var(--dim);}
+  summary{cursor:pointer; font-size:12.5px; padding:4px 0;}
+  pre{background:var(--velvet); border:1px solid var(--line); border-radius:3px; padding:12px;
+      overflow:auto; font-size:11.5px; line-height:1.55; color:var(--chalk); margin-top:8px;}
+
+  /* ---------------- the one orchestrated moment ---------------- */
+  .reveal > *{opacity:0; transform:translateY(10px); animation:rise .45s cubic-bezier(.2,.7,.3,1) forwards;}
+  @keyframes rise{to{opacity:1; transform:none;}}
+  .spin{width:13px;height:13px;border:2px solid var(--brass-dim);border-top-color:var(--brass);
+    border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){
+    .reveal > *{animation:none; opacity:1; transform:none;} .spin{animation:none;}
+  }
+
+  /* ---------------- narrow ---------------- */
+  @media (max-width:1180px){
+    .c-alias,.c-ig,.c-x{width:auto}
+    .strip{gap:16px; padding:12px 18px;}
+    .pane-head,.pane-body,.pane-foot{padding-left:18px; padding-right:18px;}
+  }
+  @media (max-width:980px){
+    body{overflow:auto; display:block; height:auto;}
+    .strip{flex-wrap:wrap; gap:14px;}
+    .strip-sep{display:none;}
+    .field{flex:1 1 100%;}
+    .panes{grid-template-columns:1fr;}
+    .pane{height:auto;}
+    .pane + .pane{border-left:0; border-top:1px solid var(--line);}
+    .pane-body{overflow:visible;}
+    .pane-body.tbl-wrap{overflow:auto;}
+    table{min-width:820px;}
+    thead th{position:static;}
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>🚫 NopeList — your personal event bouncer</h1>
-  <p>Scan the guest lists of your Luma events against your private blacklist.</p>
-</header>
 
-<main>
-  <div id="banner" class="banner"></div>
+<div class="strip">
+  <h1 class="mark">Nope<em>List</em><span>Your personal event bouncer</span></h1>
 
-  <div class="cols">
-    <section class="panel">
-      <h2>Blacklist (the brain)</h2>
+  <div class="strip-sep"></div>
+
+  <div class="field">
+    <label for="urls">Event links, one per line</label>
+    <textarea id="urls" placeholder="https://lu.ma/your-event"></textarea>
+  </div>
+
+  <div class="toggles">
+    <span class="tg"><input type="checkbox" id="dryRun" checked />
+      <label for="dryRun">Dry run<small>Demo data, nothing fetched</small></label></span>
+    <span class="tg"><input type="checkbox" id="useMcp" />
+      <label for="useMcp">Find events via Luma<small>Used when the box is empty</small></label></span>
+  </div>
+
+  <button id="scan" class="cta" type="button">Scan my events</button>
+  <span id="scanMsg" class="said" role="status"></span>
+</div>
+
+<div id="banner" class="banner" role="alert"></div>
+
+<div class="panes">
+
+  <section class="pane">
+    <div class="pane-head">
+      <h2>The list</h2>
+      <p>People you'd rather not run into. Nobody sees this but you.</p>
+    </div>
+    <div class="pane-body tbl-wrap">
       <table>
         <thead>
           <tr>
-            <th>Name</th><th>Aliases</th><th>@instagram</th><th>@x</th>
-            <th>Reason</th><th>Threat</th><th>Safe</th><th></th>
+            <th class="c-name">Name</th>
+            <th class="c-alias">Also goes by</th>
+            <th class="c-ig">Instagram</th>
+            <th class="c-x">X</th>
+            <th class="c-reason">Reason</th>
+            <th class="c-threat">Threat</th>
+            <th class="c-like mid">Like them</th>
+            <th class="c-del"><span class="sr" aria-hidden="true"></span></th>
           </tr>
         </thead>
         <tbody id="people"></tbody>
+        <tfoot>
+          <tr><td colspan="8" class="adder">
+            <button id="addRow" type="button" class="add-row">Add a person</button>
+          </td></tr>
+        </tfoot>
       </table>
-      <div class="row-actions">
-        <button id="addRow">+ Add row</button>
-        <button id="save" class="primary">Save blacklist</button>
-        <span id="saveMsg" class="ok"></span>
-      </div>
-    </section>
+    </div>
+    <div class="pane-foot">
+      <button id="save" type="button">Save list</button>
+      <span id="saveMsg" class="said" role="status"></span>
+      <span id="rowsNote" class="rows-note"></span>
+    </div>
+  </section>
 
-    <section class="panel">
-      <h2>Events</h2>
-      <textarea id="urls" placeholder="https://lu.ma/your-event&#10;one URL per line"></textarea>
-      <label class="opt"><input type="checkbox" id="useMcp" /> Discover via Luma MCP (if logged in)</label>
-      <label class="opt"><input type="checkbox" id="dryRun" checked /> Dry run (offline demo)</label>
-      <div class="row-actions">
-        <button id="scan" class="primary">Scan events</button>
-        <span id="scanMsg"></span>
-      </div>
-    </section>
-  </div>
+  <section class="pane">
+    <div class="pane-head">
+      <h2>The verdict</h2>
+      <p id="paneNote">Nothing scanned yet.</p>
+    </div>
+    <div class="pane-body">
+      <p id="empty" class="quiet">Press scan and you'll get a verdict per event, the reason quoted back at you, and a text you can send.</p>
+      <div id="summary"></div>
+      <div id="results"></div>
+      <div id="excuse"></div>
+      <div id="raw"></div>
+    </div>
+  </section>
 
-  <div id="summary"></div>
-  <div id="results"></div>
-  <div id="excuse"></div>
-  <div id="raw"></div>
-</main>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const EMOJI = { CLEAR: "🟢", AWKWARD: "🟡", EVACUATE: "🔴" };
 
 function showError(msg) {
-  const b = $("banner");
-  b.textContent = msg;
-  b.style.display = msg ? "block" : "none";
+  $("banner").textContent = msg;
 }
 
 async function api(path, opts) {
@@ -138,25 +257,32 @@ async function api(path, opts) {
   return body;
 }
 
-/* ---------------- blacklist table ---------------- */
+/* ---------------- the list ---------------- */
+function countRows() {
+  const n = $("people").querySelectorAll("tr").length;
+  $("rowsNote").textContent = n === 1 ? "1 person" : `${n} people`;
+}
+
 function addPersonRow(p) {
   p = p || { name: "", aliases: [], instagram: "", x_handle: "", reason: "", threat_weight: 2, safe: false };
   const tr = document.createElement("tr");
   tr.innerHTML = `
-    <td><input type="text" class="f-name" value="${esc(p.name)}"></td>
-    <td><input type="text" class="f-aliases" value="${esc((p.aliases || []).join(', '))}" placeholder="comma, separated"></td>
-    <td><input type="text" class="f-ig" value="${esc(p.instagram || '')}"></td>
-    <td><input type="text" class="f-x" value="${esc(p.x_handle || '')}"></td>
-    <td><input type="text" class="f-reason" value="${esc(p.reason)}"></td>
-    <td><select class="f-weight">
-      <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+    <td><input type="text" class="f-name" value="${esc(p.name)}" aria-label="Name" placeholder="Who is it"></td>
+    <td><input type="text" class="f-aliases" value="${esc((p.aliases || []).join(', '))}" aria-label="Also goes by" placeholder="Nicknames"></td>
+    <td><input type="text" class="f-ig" value="${esc(p.instagram || '')}" aria-label="Instagram handle" placeholder="@handle"></td>
+    <td><input type="text" class="f-x" value="${esc(p.x_handle || '')}" aria-label="X handle" placeholder="@handle"></td>
+    <td><input type="text" class="f-reason" value="${esc(p.reason)}" aria-label="Reason" placeholder="What they did"></td>
+    <td><select class="f-weight" aria-label="Threat level">
+      <option value="1">Minor</option><option value="2">Real</option><option value="3">Severe</option>
     </select></td>
-    <td style="text-align:center"><input type="checkbox" class="f-safe"></td>
-    <td><button class="mini f-del" title="delete">✕</button></td>`;
+    <td class="mid"><input type="checkbox" class="f-safe" aria-label="Actually, I like this one"></td>
+    <td><button type="button" class="x-btn f-del" aria-label="Remove this person" title="Remove">&times;</button></td>`;
   tr.querySelector(".f-weight").value = String(p.threat_weight || 2);
   tr.querySelector(".f-safe").checked = !!p.safe;
-  tr.querySelector(".f-del").onclick = () => tr.remove();
+  tr.querySelector(".f-del").onclick = () => { tr.remove(); countRows(); };
   $("people").appendChild(tr);
+  countRows();
+  return tr;
 }
 
 function collectPeople() {
@@ -171,60 +297,70 @@ function collectPeople() {
   })).filter((p) => p.name);
 }
 
-/* ---------------- results ---------------- */
-function hitHtml(h, safe) {
-  const handle = h.handle ? `@${esc(h.handle)}` : "(no handle)";
+/* ---------------- verdicts ---------------- */
+function hitHtml(h) {
+  const handle = h.handle ? `@${esc(h.handle)}` : "no handle";
   const pct = Math.round((h.confidence || 0) * 100);
-  if (safe) {
-    return `<div class="safe">☕ ${esc(h.guest_name)} ${handle} is going — “${esc(h.reason)}”</div>`;
-  }
   return `<div class="hit">
-      <div><span class="who">${esc(h.guest_name)}</span> <span class="tag">${handle}</span>
-        <span class="tag">→ ${esc(h.person_name)} · ${pct}% via ${esc(h.matched_on)} · threat ${h.threat_weight}</span></div>
-      <div class="reason">“${esc(h.reason)}”</div>
+      <div class="who">${esc(h.guest_name)} <small>${handle}</small></div>
+      <p class="why">“${esc(h.reason)}”</p>
+      <div class="prov">Matches ${esc(h.person_name)} on ${esc(h.matched_on)}, ${pct}% sure. Threat ${h.threat_weight} of 3.</div>
     </div>`;
 }
 
-function render(data) {
-  const s = data.summary;
-  $("summary").textContent =
-    `${s.events_scanned} event(s) scanned · ${s.events_with_hits} with hits · ` +
-    `${s.events_to_evacuate} to evacuate · ${s.friendly_faces} friendly face(s)` +
-    (s.dry_run ? " · dry run" : "");
+function friendlyHtml(h) {
+  return `<div class="friendly">${esc(h.guest_name)} is going too, and you like them <i>— ${esc(h.reason)}</i></div>`;
+}
 
-  $("results").innerHTML = data.events.map((e) => {
+function render(data) {
+  $("empty").style.display = "none";
+  const s = data.summary;
+  $("paneNote").textContent = s.dry_run ? "Dry run, demo data." : "Live scan.";
+  $("summary").innerHTML = [
+    `<b>${s.events_scanned}</b> event${s.events_scanned === 1 ? "" : "s"} scanned`,
+    `<b>${s.events_with_hits}</b> with someone on your list`,
+    `<b>${s.events_to_evacuate}</b> worth skipping`,
+    `<b>${s.friendly_faces}</b> friendly face${s.friendly_faces === 1 ? "" : "s"}`,
+  ].join(" &nbsp;/&nbsp; ");
+
+  $("results").className = "reveal";
+  $("results").innerHTML = data.events.map((e, i) => {
     const of = e.guest_count != null ? ` of ${e.guest_count}` : "";
-    const cached = e.from_cache ? " · cached" : "";
-    const body = (e.hits.map((h) => hitHtml(h, false)).join("") +
-                  e.safe_hits.map((h) => hitHtml(h, true)).join("")) ||
-                 `<div class="safe">nobody on your list. go forth.</div>`;
-    return `<div class="card ${esc(e.threat_level)}">
-      <h3>${EMOJI[e.threat_level] || ""} ${esc(e.threat_level)} — ${esc(e.title)}</h3>
-      <div class="meta"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url)}</a></div>
-      <div class="meta">${e.guests_read}${of} guests read${cached} · threat score ${e.threat_score}</div>
-      ${body}
-    </div>`;
+    const cached = e.from_cache ? ", from cache" : "";
+    const body = (e.hits.map(hitHtml).join("") + e.safe_hits.map(friendlyHtml).join("")) ||
+                 `<div class="nobody">Nobody from your list. Go and enjoy yourself.</div>`;
+    return `<article class="verdict ${esc(e.threat_level)}" style="animation-delay:${i * 80}ms">
+      <div class="v-word">${esc(e.threat_level)}</div>
+      <h3 class="v-title">${esc(e.title)}</h3>
+      <p class="v-meta">${e.guests_read}${of} guests read${cached} &nbsp;/&nbsp; score ${e.threat_score} &nbsp;/&nbsp;
+        <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url)}</a></p>
+      <div class="v-body"><div class="spine"></div><div>${body}</div></div>
+    </article>`;
   }).join("");
 
   if (data.excuse) {
     $("excuse").innerHTML = `<div class="excuse">
-      <h2 style="margin:0;font-size:14px">📱 Excuse draft — ${esc(data.excuse.event_title)}</h2>
+      <h3>A way out of ${esc(data.excuse.event_title)}</h3>
       <p id="excuseText">${esc(data.excuse.text)}</p>
-      <button id="copyExcuse">Copy</button> <span id="copyMsg" class="ok"></span>
+      <button id="copyExcuse" type="button">Copy this text</button> <span id="copyMsg" class="said"></span>
     </div>`;
     $("copyExcuse").onclick = async () => {
-      try { await navigator.clipboard.writeText(data.excuse.text); $("copyMsg").textContent = "copied"; }
-      catch (e) { $("copyMsg").textContent = "copy failed"; }
+      try { await navigator.clipboard.writeText(data.excuse.text); $("copyMsg").textContent = "Copied"; }
+      catch (e) { $("copyMsg").textContent = "Copy failed. Select the text and copy it by hand."; }
     };
   } else {
     $("excuse").innerHTML = "";
   }
 
-  $("raw").innerHTML = `<details><summary>Raw threat report</summary><pre>${esc(data.report_text)}</pre></details>`;
+  $("raw").innerHTML = `<details><summary>Show the raw report</summary><pre>${esc(data.report_text)}</pre></details>`;
 }
 
 /* ---------------- wiring ---------------- */
-$("addRow").onclick = () => addPersonRow(null);
+$("addRow").onclick = () => {
+  const tr = addPersonRow(null);
+  tr.scrollIntoView({ block: "nearest" });
+  tr.querySelector(".f-name").focus();
+};
 
 $("save").onclick = async () => {
   showError(""); $("saveMsg").textContent = "";
@@ -234,15 +370,16 @@ $("save").onclick = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(collectPeople()),
     });
-    $("saveMsg").textContent = `saved ${saved.length}`;
+    $("saveMsg").textContent = `Saved ${saved.length}`;
     setTimeout(() => ($("saveMsg").textContent = ""), 2500);
-  } catch (e) { showError("Could not save blacklist: " + e.message); }
+  } catch (e) { showError("The list didn't save: " + e.message + "  Fix the row it names, then save again."); }
 };
 
 $("scan").onclick = async () => {
   showError("");
   $("scan").disabled = true;
-  $("scanMsg").innerHTML = `<span class="spinner"></span> scanning…`;
+  $("scan").textContent = "Reading guest lists";
+  $("scanMsg").innerHTML = `<span class="spin"></span> Working the door…`;
   try {
     const data = await api("/api/scan", {
       method: "POST",
@@ -255,9 +392,10 @@ $("scan").onclick = async () => {
     });
     render(data);
   } catch (e) {
-    showError("Scan failed: " + e.message);
+    showError("The scan stopped: " + e.message);
   } finally {
     $("scan").disabled = false;
+    $("scan").textContent = "Scan my events";
     $("scanMsg").textContent = "";
   }
 };
@@ -267,7 +405,7 @@ $("scan").onclick = async () => {
     const people = await api("/api/blacklist");
     people.forEach(addPersonRow);
     if (!people.length) addPersonRow(null);
-  } catch (e) { showError("Could not load blacklist: " + e.message); }
+  } catch (e) { showError("The list didn't load: " + e.message + "  Check that the server can read data/blacklist.json, then reload."); }
   try {
     const urls = await api("/api/events");
     $("urls").value = urls.join("\n") || "https://lu.ma/demo-mixer";
