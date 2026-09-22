@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Aakash Vidiyala",
+    "reason": "cornered me about his seed round for 40 minutes",
+    "aliases": ["Aakash V"],
+    "instagram": "vidiyala99",
+    "x_handle": null,
+    "threat_weight": 3,
+    "safe": false
+  },
+  {
+    "name": "Priya Ramaswamy",
+    "reason": "still owes me $14 for the Uber from Founders Inc and keeps saying 'Venmo is being weird'",
+    "aliases": ["Pri Ramaswamy", "Priya R"],
+    "instagram": "priya.builds",
+    "x_handle": "priyaships",
+    "threat_weight": 1,
+    "safe": false
+  },
+  {
+    "name": "Dmitri Volkov-Hale",
+    "reason": "pitched me his 'Uber for dogs but on-chain' three separate times, once while I was clearly on a phone call",
+    "aliases": ["Dima Volkov", "Dmitri Hale"],
+    "instagram": null,
+    "x_handle": "dimadoesdefi",
+    "threat_weight": 2,
+    "safe": false
+  },
+  {
+    "name": "Maya Chen",
+    "reason": "actually fun to talk to and always knows where the good snacks are",
+    "aliases": ["Maya C"],
+    "instagram": "mayachen.jpg",
+    "x_handle": "mayabuilds",
+    "threat_weight": 1,
+    "safe": true
+  }
+]
