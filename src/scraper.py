@@ -34,6 +34,10 @@ Environment variables (read here, loaded from .env by the entrypoint):
   BRIGHTDATA_BROWSER_PASS   Browser API zone password
   BRIGHTDATA_BROWSER_AUTH   optional "USER:PASS" in one string (overrides the two above)
   BRIGHTDATA_BROWSER_WSS    optional full endpoint override (default wss://<AUTH>@brd.superproxy.io:9222)
+  LUMA_SESSION_COOKIE       optional 'luma.auth-session-key' cookie value; lets the remote
+                            browser see the FULL guest list (Luma renders it only for
+                            logged-in registrants). Scraper only -- discovery still uses
+                            the Luma MCP server / events.txt.
   NOPELIST_DRY_RUN          "1" -> fixtures only, never touch the network
 """
 from __future__ import annotations
@@ -62,6 +66,21 @@ LUMA_API = "https://api.lu.ma"
 BRD_DEFAULT_HOST = "brd.superproxy.io:9222"
 PAGE_TIMEOUT_MS = 2 * 60 * 1000  # Bright Data recommends a generous goto timeout
 GUEST_PAGE_SIZE = 100
+GUEST_PAGE_CAP = 500  # stop scrolling the modal after this many rows
+
+LUMA_COOKIE_NAME = "luma.auth-session-key"
+LUMA_COOKIE_DOMAINS = (".lu.ma", ".luma.com")
+
+# Zero-width / bidi junk Luma sprinkles through its rich-text description blocks.
+_ZERO_WIDTH_RE = re.compile(r"[​-‏  ﻿­]")
+# Description / metadata lines that must never be mistaken for a guest.
+_NOT_A_NAME_RE = re.compile(
+    r"(\band\s+\d[\d,]*\s+others?\b|\b\d[\d,]*\s+(guests?|going|attendees?)\b"
+    r"|^(when|where|what|who|why|how|register|approval|hosted by|presented by)\b"
+    r"|\b(am|pm)\b.*\d|\d{1,2}:\d{2}|https?://)",
+    re.I,
+)
+MAX_NAME_LEN = 40
 
 
 # --------------------------------------------------------------------------- #
@@ -95,17 +114,79 @@ def _clean_handle(value: Any) -> Optional[str]:
     return v
 
 
+def _clean_text(value: Any) -> str:
+    """Strip zero-width/bidi junk and collapse whitespace."""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", _ZERO_WIDTH_RE.sub("", value)).strip()
+
+
+def _looks_like_person(name: str) -> bool:
+    """True when ``name`` could plausibly be a guest rather than description text."""
+    if not name or len(name) > MAX_NAME_LEN:
+        return False
+    if _NOT_A_NAME_RE.search(name):
+        return False
+    # Sentences / bullets end in punctuation; names do not.
+    if name.endswith((".", ":", "!", "?", ",")):
+        return False
+    return len(name.split()) <= 5
+
+
+def _dedupe(guests: list[Guest]) -> list[Guest]:
+    out: list[Guest] = []
+    seen: set[tuple] = set()
+    for g in guests:
+        key = (g.name.casefold(), g.instagram, g.x_handle)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(g)
+    return out
+
+
+def luma_session_cookie() -> Optional[str]:
+    value = (os.getenv("LUMA_SESSION_COOKIE") or "").strip().strip('"').strip("'")
+    # Tolerate a pasted 'luma.auth-session-key=abc' pair.
+    if value.startswith(f"{LUMA_COOKIE_NAME}="):
+        value = value.split("=", 1)[1].strip()
+    return value or None
+
+
+def apply_luma_cookie(context) -> bool:
+    """Inject LUMA_SESSION_COOKIE into the remote browser context (scraper only).
+
+    Luma serves both lu.ma and luma.com, and redirects between them, so the cookie
+    is registered on both apexes. Returns True when a cookie was applied.
+    """
+    value = luma_session_cookie()
+    if not value:
+        return False
+    cookies = [
+        {"name": LUMA_COOKIE_NAME, "value": value, "domain": d, "path": "/",
+         "httpOnly": True, "secure": True, "sameSite": "Lax"}
+        for d in LUMA_COOKIE_DOMAINS
+    ]
+    try:
+        context.add_cookies(cookies)
+    except Exception as exc:  # noqa: BLE001 - a bad cookie must not kill the scrape
+        log.warning("Could not apply LUMA_SESSION_COOKIE (%s); continuing logged out", exc)
+        return False
+    log.info("Applied LUMA_SESSION_COOKIE to %s", " and ".join(LUMA_COOKIE_DOMAINS))
+    return True
+
+
 def _event_to_json(event: Event) -> dict:
     return asdict(event)
 
 
 def _event_from_json(data: dict, url: str, from_cache: bool) -> Event:
-    guests = [
-        Guest(name=g.get("name", ""), instagram=_clean_handle(g.get("instagram")),
+    guests = _dedupe([
+        Guest(name=_clean_text(g.get("name")), instagram=_clean_handle(g.get("instagram")),
               x_handle=_clean_handle(g.get("x_handle")))
         for g in data.get("guests", [])
-        if g.get("name")
-    ]
+        if _clean_text(g.get("name"))
+    ])
     # Always key on the URL that was asked for: a shared fixture (guests_default.json)
     # can serve several requested events, and agent.py indexes events by that URL.
     return Event(
@@ -163,6 +244,7 @@ def open_luma_page(playwright_ctx):  # -> (browser, page)
     log.info("Connecting to Bright Data Browser API at %s", BRD_DEFAULT_HOST)
     browser = playwright_ctx.chromium.connect_over_cdp(endpoint, timeout=PAGE_TIMEOUT_MS)
     context = browser.contexts[0] if browser.contexts else browser.new_context()
+    apply_luma_cookie(context)  # BEFORE any navigation, so the first render is logged in
     page = context.pages[0] if context.pages else context.new_page()
     page.set_default_timeout(PAGE_TIMEOUT_MS)
     return browser, page
@@ -200,60 +282,181 @@ _X_KEYS = ("twitter_handle", "x_handle", "twitter", "x", "twitter_url", "x_url")
 def _guest_from_api_entry(entry: dict) -> Optional[Guest]:
     # Luma nests the profile under "user" in some responses; flatten tolerantly.
     src = {**entry, **(entry.get("user") or {})}
-    name = src.get("name") or " ".join(
+    name = _clean_text(src.get("name")) or _clean_text(" ".join(
         p for p in (src.get("first_name"), src.get("last_name")) if p
-    ).strip()
+    ))
     if not name:
         return None
     insta = next((_clean_handle(src.get(k)) for k in _INSTA_KEYS if src.get(k)), None)
     x = next((_clean_handle(src.get(k)) for k in _X_KEYS if src.get(k)), None)
-    return Guest(name=name.strip(), instagram=insta, x_handle=x)
+    return Guest(name=name, instagram=insta, x_handle=x)
 
 
-def guests_via_dom(page) -> list[Guest]:
-    """Open the 'N Guests' modal and read names + social links from the DOM."""
-    opened = False
-    for pattern in (re.compile(r"\d[\d,]*\s+Guests?", re.I), re.compile(r"^Guests?$", re.I)):
+def watch_guest_api(page) -> list[dict]:
+    """Record every JSON response from Luma's API whose URL mentions 'guest'.
+
+    Opening the modal makes the page call its own endpoint (api.lu.ma /
+    api.luma.com, e.g. .../event/get-guest-list); that JSON is far cleaner than
+    the DOM, so we capture it opportunistically. The returned list fills in
+    place as responses arrive.
+    """
+    captured: list[dict] = []
+
+    def on_response(response) -> None:
         try:
-            page.get_by_text(pattern).first.click(timeout=8000)
-            opened = True
-            break
+            url = response.url
+            host = urlparse(url).netloc.lower()
+            if "guest" not in url.lower():
+                return
+            if not (host.endswith("lu.ma") or host.endswith("luma.com")):
+                return
+            if "json" not in (response.headers.get("content-type") or "").lower():
+                return
+            captured.append(response.json())
+            log.info("Captured Luma guest API response: %s", url.split("?")[0])
+        except Exception:  # noqa: BLE001 - a response we cannot read is just skipped
+            pass
+
+    page.on("response", on_response)
+    return captured
+
+
+def _iter_guest_entries(payload: Any):
+    """Yield dicts that look like guest records anywhere inside an API payload."""
+    if isinstance(payload, dict):
+        if isinstance(payload.get("user"), dict) or (
+            payload.get("name") and ("api_id" in payload or "user_api_id" in payload)
+        ):
+            yield payload
+        for value in payload.values():
+            yield from _iter_guest_entries(value)
+    elif isinstance(payload, list):
+        for item in payload:
+            yield from _iter_guest_entries(item)
+
+
+def guests_from_api_payloads(payloads: list[dict]) -> list[Guest]:
+    guests: list[Guest] = []
+    for payload in payloads:
+        for entry in _iter_guest_entries(payload):
+            guest = _guest_from_api_entry(entry)
+            if guest and _looks_like_person(guest.name):
+                guests.append(guest)
+    return _dedupe(guests)
+
+
+def open_guest_modal(page) -> bool:
+    """Click the '<N> Guests' / '<N> Going' trigger (or the avatar row) and wait
+    for the dialog. Returns False when Luma never renders one (logged out)."""
+    triggers = [
+        lambda: page.get_by_text(re.compile(r"\d[\d,]*\s+(Guests|Going)", re.I)).first,
+        lambda: page.locator('a[href*="/guests"]').first,
+        lambda: page.locator("div.avatar-wrapper, div[class*='avatars'] , div[class*='guest']").first,
+    ]
+    for make in triggers:
+        try:
+            make().click(timeout=8000)
+            page.wait_for_selector('[role="dialog"]', timeout=8000)
+            return True
         except Exception:
             continue
-    if not opened:
-        log.warning("Could not open guest modal; scraping visible guest rows only")
+    return False
 
-    # Scroll the modal so lazy rows render.
-    for _ in range(30):
-        try:
-            page.mouse.wheel(0, 2000)
-            page.wait_for_timeout(400)
-        except Exception:
+
+def _scroll_dialog(page) -> None:
+    """Scroll the dialog's scrollable element until the row count stops growing."""
+    js_count = """
+    () => {
+      const d = document.querySelector('[role="dialog"]');
+      return d ? d.querySelectorAll('a[href*="/user/"], a[href^="/u/"]').length : 0;
+    }
+    """
+    js_scroll = """
+    () => {
+      const d = document.querySelector('[role="dialog"]');
+      if (!d) return;
+      const scroller = Array.from(d.querySelectorAll('*'))
+        .find(e => e.scrollHeight > e.clientHeight + 40) || d;
+      scroller.scrollTop = scroller.scrollHeight;
+    }
+    """
+    previous = -1
+    for _ in range(40):
+        count = page.evaluate(js_count) or 0
+        if count == previous or count >= GUEST_PAGE_CAP:
             break
+        previous = count
+        page.evaluate(js_scroll)
+        page.wait_for_timeout(500)
 
+
+def guests_from_dialog(page) -> list[Guest]:
+    """Parse ONLY the rows inside the open guest dialog."""
     js = """
     () => {
-      const scope = document.querySelector('[role="dialog"]') || document.body;
+      const d = document.querySelector('[role="dialog"]');
+      if (!d) return [];
       const rows = [];
-      const seen = new Set();
-      scope.querySelectorAll('a[href*="/user/"], a[href^="/u/"], div[class*="guest"], li').forEach(el => {
-        const name = (el.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean)[0];
-        if (!name || name.length > 80 || seen.has(name)) return;
+      d.querySelectorAll('a[href*="/user/"], a[href^="/u/"]').forEach(el => {
+        const row = el.closest('div[class*="row"], li, tr') || el;
+        const name = (el.innerText || row.innerText || '')
+          .split('\\n').map(s => s.trim()).filter(Boolean)[0] || '';
         let instagram = null, x = null;
-        el.querySelectorAll('a[href]').forEach(a => {
+        row.querySelectorAll('a[href]').forEach(a => {
           const h = a.getAttribute('href') || '';
           if (/instagram\\.com\\//i.test(h)) instagram = h;
-          if (/(twitter|x)\\.com\\//i.test(h)) x = h;
+          else if (/(twitter|x)\\.com\\//i.test(h)) x = h;
         });
-        seen.add(name);
         rows.push({name, instagram, x});
       });
       return rows;
     }
     """
     rows = page.evaluate(js) or []
-    return [Guest(name=r["name"], instagram=_clean_handle(r.get("instagram")),
-                  x_handle=_clean_handle(r.get("x"))) for r in rows if r.get("name")]
+    guests = []
+    for r in rows:
+        name = _clean_text(r.get("name"))
+        if not _looks_like_person(name):
+            continue
+        guests.append(Guest(name=name, instagram=_clean_handle(r.get("instagram")),
+                            x_handle=_clean_handle(r.get("x"))))
+    return _dedupe(guests)
+
+
+def guests_visible_logged_out(page) -> list[Guest]:
+    """Hosts + featured avatars only -- what Luma renders without a session.
+
+    Everything that is description prose, a teaser line ('... and 326 others'),
+    or a date/location row is dropped by ``_looks_like_person``.
+    """
+    js = """
+    () => {
+      const rows = [];
+      document.querySelectorAll(
+        '.host-row a, [class*="host"] a[href*="/user/"], a[href*="/user/"], a[href^="/u/"]'
+      ).forEach(el => {
+        const name = (el.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean)[0] || '';
+        let instagram = null, x = null;
+        const row = el.closest('div[class*="row"], li') || el;
+        row.querySelectorAll('a[href]').forEach(a => {
+          const h = a.getAttribute('href') || '';
+          if (/instagram\\.com\\//i.test(h)) instagram = h;
+          else if (/(twitter|x)\\.com\\//i.test(h)) x = h;
+        });
+        rows.push({name, instagram, x});
+      });
+      return rows;
+    }
+    """
+    rows = page.evaluate(js) or []
+    guests = []
+    for r in rows:
+        name = _clean_text(r.get("name"))
+        if not _looks_like_person(name):
+            continue
+        guests.append(Guest(name=name, instagram=_clean_handle(r.get("instagram")),
+                            x_handle=_clean_handle(r.get("x"))))
+    return _dedupe(guests)
 
 
 def _scrape_live(event_url: str) -> Event:
@@ -263,6 +466,7 @@ def _scrape_live(event_url: str) -> Event:
     with sync_playwright() as pw:
         browser, page = open_luma_page(pw)
         try:
+            captured = watch_guest_api(page)
             log.info("Navigating to %s", event_url)
             page.goto(event_url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
 
@@ -279,11 +483,36 @@ def _scrape_live(event_url: str) -> Event:
                 except Exception:
                     pass
 
-            guests = guests_via_dom(page)
-            log.info("Guest list via DOM modal: %d guests", len(guests))
-            if not guests and meta:
-                # Last resort: the public 'featured_guests' snippet.
-                guests = [g for g in (_guest_from_api_entry(e) for e in meta["data"].get("featured_guests", [])) if g]
+            if open_guest_modal(page):
+                _scroll_dialog(page)
+                page.wait_for_timeout(500)
+                guests = guests_from_api_payloads(captured)
+                if guests:
+                    log.info("Guest list via Luma guest API: %d guests", len(guests))
+                else:
+                    guests = guests_from_dialog(page)
+                    log.info("Guest list via guest dialog DOM: %d guests", len(guests))
+            else:
+                guests = []
+
+            if not guests:
+                # Logged out: Luma renders hosts + a few featured avatars and nothing else.
+                guests = guests_visible_logged_out(page)
+                if meta:
+                    featured = [
+                        g for g in (_guest_from_api_entry(e)
+                                    for e in (meta.get("data") or {}).get("featured_guests", []))
+                        if g and _looks_like_person(g.name)
+                    ]
+                    guests = _dedupe(guests + featured)
+                if not luma_session_cookie():
+                    log.warning(
+                        "Luma guest list requires login: set LUMA_SESSION_COOKIE to see all %s guests",
+                        guest_count if guest_count is not None else "?",
+                    )
+                log.info("Visible (logged-out) hosts/featured guests: %d", len(guests))
+
+            guests = _dedupe([g for g in guests if _looks_like_person(g.name)])
         finally:
             try:
                 browser.close()
