@@ -1,0 +1,12 @@
+{
+  "client_id": "https://boeing23.github.io/cognee_hack/luma-client.json",
+  "client_name": "NopeList (Battle of the Personal Brains hackathon)",
+  "client_uri": "https://boeing23.github.io/cognee_hack/",
+  "redirect_uris": [
+    "http://localhost:3030/callback",
+    "http://127.0.0.1:3030/callback"
+  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
