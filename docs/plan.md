@@ -130,8 +130,9 @@ so pick a lane up front.
 ### 🤖 AWS Strands — the agent
 - **Shape:** `Agent(model=..., tools=[discover_events, scrape_guests,
   match_brain, render_report])`. Model-driven loop over the four tools.
-- **Model:** runs against an Anthropic API key directly or via Bedrock ($25 AWS
-  credit). Anthropic key is the fastest path for the hackathon.
+- **Model:** Muse Spark (`muse-spark-1.3`) via the OpenAI-compatible Meta Model API
+  (`https://api.meta.ai/v1`, `MODEL_API_KEY`) through Strands' `OpenAIModel`; Anthropic
+  key or Bedrock ($25 AWS credit) remain as fallbacks.
 - **Each tool** is a plain `@tool`-decorated Python function; the Bright Data MCP
   server can also be attached as tools directly.
 - Docs: https://strandsagents.com · SDK: https://github.com/strands-agents/sdk-python

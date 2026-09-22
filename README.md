@@ -28,13 +28,17 @@ Plan: [docs/plan.md](docs/plan.md) · Ideas backlog: [docs/ideas.md](docs/ideas.
 
 ```bash
 cp .env.example .env
-# fill in: ANTHROPIC_API_KEY, LLM_API_KEY (same value), BRIGHTDATA_BROWSER_USER/PASS
+# fill in: MODEL_API_KEY, LLM_API_KEY (same value), BRIGHTDATA_BROWSER_USER/PASS
 ```
 
 Every variable is documented in [`.env.example`](.env.example), grouped by sponsor with
-where-to-get-it notes. Minimum for a live run: an Anthropic key (Strands + Cognee) and a
-Bright Data **Browser API** zone (scraper). Optional: Luma MCP login (below), Cognee
-Cloud, Bedrock.
+where-to-get-it notes. Minimum for a live run: a **Meta Model API** key from
+[dev.meta.ai](https://dev.meta.ai) (`MODEL_API_KEY`; Muse Spark `muse-spark-1.3` drives
+both the Strands agent and Cognee through the OpenAI-compatible endpoint
+`https://api.meta.ai/v1`) and a Bright Data **Browser API** zone (scraper). Optional: Luma
+MCP login (below), Cognee Cloud. Fallback model providers: Anthropic (`ANTHROPIC_API_KEY`)
+or Bedrock (AWS creds), picked automatically when `MODEL_API_KEY` is unset, or forced with
+`NOPELIST_MODEL_PROVIDER=meta|anthropic|bedrock`.
 
 ### 2. One-time Luma login (optional, no API key)
 
@@ -111,7 +115,7 @@ NOPELIST_DRY_RUN=1 python -m src.agent --no-llm
 | 🧠 Cognee | [`src/brain.py`](src/brain.py) | `cognee.add()` + `cognee.cognify()` ingest the blacklist into dataset `nopelist_blacklist`; `match_guest()` tries handle → name/alias, then falls back to `cognee.search(GRAPH_COMPLETION)` for fuzzy identity resolution. Optional Cognee Cloud via `COGNEE_SERVICE_URL`. |
 | 🌐 Bright Data | [`src/scraper.py`](src/scraper.py) | Playwright `connect_over_cdp()` to the Browser API (`wss://…@brd.superproxy.io:9222`), loads the event page, pulls the guest list from the DOM modal (plus `featured_guests` from Luma's public URL endpoint), writes `data/cache/`. Used for every event you attend but don't host. |
 | 📅 Luma MCP | [`src/luma_mcp.py`](src/luma_mcp.py), [`src/luma_auth.py`](src/luma_auth.py), [`src/discover.py`](src/discover.py), [`docs/luma-client.json`](docs/luma-client.json) | `OAuthClientProvider` (mcp SDK) with the CIMD as `client_id` + file token storage; `MCPClient` over `streamablehttp_client` so refresh is automatic. `discover.py` calls `list_events`; `scraper.py` calls `get_event` + `list_guests` for hosted events; `agent.py` attaches all Luma tools to the agent. |
-| 🤖 AWS Strands | [`src/agent.py`](src/agent.py) | `strands.Agent` with `@tool`s `discover_registered_events`, `scrape_event_guests`, `match_guests_against_brain`, `render_threat_report`, `suggest_excuse`, plus the Luma MCP tools via `strands.tools.mcp.MCPClient` when logged in. `AnthropicModel` first, `BedrockModel` if only AWS creds are set. `--no-llm` calls the same tools directly. |
+| 🤖 AWS Strands | [`src/agent.py`](src/agent.py) | `strands.Agent` with `@tool`s `discover_registered_events`, `scrape_event_guests`, `match_guests_against_brain`, `render_threat_report`, `suggest_excuse`, plus the Luma MCP tools via `strands.tools.mcp.MCPClient` when logged in. Model: `OpenAIModel` on the Meta Model API (Muse Spark) when `MODEL_API_KEY` is set; `AnthropicModel` / `BedrockModel` as fallbacks. `--no-llm` calls the same tools directly. |
 | 🐳 Docker | [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) | `python:3.11-slim`, non-root user, `no-new-privileges`; embeds the fastembed model; `nopelist-dry` profile runs with no network. Optional Bright Data (`mcp/brightdata`, Docker MCP Catalog) and Cognee (`cognee/cognee-mcp`) MCP server containers are stubbed, commented out. |
 | shared | [`src/models.py`](src/models.py), [`src/report.py`](src/report.py) | `Person / Guest / Event / Match / EventResult` contract; threat scoring + rendered report. |
 
